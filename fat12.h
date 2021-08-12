@@ -2,6 +2,9 @@
 #define _FAT12_
 
 #include <stdint.h>
+
+char *fat_err;
+
 struct __attribute__((__packed__)) Header {
     char name[8];
     uint16_t byte_per_sec;
@@ -54,5 +57,8 @@ struct Fat12 {
 };
 
 struct Fat12 *new_fat12(char *filename);
+
 void free_fat12(struct Fat12 *target);
+
+void print_header(struct Fat12 *image);
 #endif
