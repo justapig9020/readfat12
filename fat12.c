@@ -155,7 +155,7 @@ uint16_t get_fat_value(struct Fat12 *image, size_t table, size_t sector) {
 
 static int dir_slice(char *path) {
     int i = 0;
-    while ('/' != path[i] && '\0' != path[i])
+    while ('/' != path[i] && '\0' != path[i] && ' ' != path[i])
         i += 1;
     return i;
 }
@@ -170,7 +170,8 @@ static struct DirEntry *find_node(struct Fat12 *image, struct DirEntry *base, ch
     struct DirEntry *ptr = base;
     int slice = dir_slice(path);
     while (ptr->filename[0] != '\0') {
-        if (strncmp(ptr->filename, path, slice) != 0) {
+        if (slice != dir_slice(ptr->filename) ||
+            strncmp(ptr->filename, path, slice) != 0) {
             ptr += 1;
             continue;
         }
