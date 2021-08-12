@@ -10,6 +10,7 @@
 
 #include "fat12.h"
 #include "tools.h"
+#include "fat_table.h"
 
 char *fat_err = NULL;
 
@@ -113,4 +114,37 @@ static void _print_header(struct Header *hdr) {
 
 void print_header(struct Fat12 *image) {
     _print_header(image->header);
+}
+
+static uint16_t get_fat_entry_value(struct FatTable *entry, size_t num) {
+    if (1 < num)
+        return FAT_UNUSED;
+    uint16_t ret = 0;
+    if (num == 0) {
+        ret = entry->low;
+        ret |= (entry->mid & 0xf) << 8;
+    } else {
+        ret = entry->mid >> 4;
+        ret |= (entry->top) << 4;
+    }
+    return ret;
+}
+
+uint16_t get_fat_value(struct Fat12 *image, size_t table, size_t sector) {
+    struct Header *header = image->header;
+    if (table >= header->num_of_fat)
+        return FAT_UNUSED;
+
+    size_t max = header->byte_per_sec * header->num_of_fat;
+    if (sector >= max)
+        return FAT_UNUSED;
+
+    struct FatTable *base = &image->table[max * table];
+    /* Due to fat12 use 12 bit to represent a fat entry, that is hard to form a single
+     * entry into structure.
+     * Therefore, FatTable form every two entries (3 bytes) into an object.
+     */
+    size_t offset = sector / 2;
+    size_t num = sector % 2;
+    return get_fat_entry_value(base + offset, num);
 }
