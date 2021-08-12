@@ -243,7 +243,7 @@ static void print_node(struct DirEntry *node) {
     print_node_attr(node->attr);
     puts("");
 
-    printf("First logical cluster: %"PRIu16"\n", node->first_logical_cluster);
+    printf("First logical cluster: 0x%"PRIx16"\n", node->first_logical_cluster);
     printf("File size(in byte): %"PRIu32"\n", node->file_size);
 }
 
