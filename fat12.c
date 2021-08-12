@@ -153,9 +153,22 @@ uint16_t get_fat_value(struct Fat12 *image, size_t table, size_t sector) {
     return get_fat_entry_value(base + offset, num);
 }
 
+static bool is_char(char a, char arr[], size_t size) {
+    for (int i=0; i<size; i++)
+        if (arr[i] == a)
+            return true;
+    return false;
+}
+
 static int dir_slice(char *path) {
     int i = 0;
-    while ('/' != path[i] && '\0' != path[i] && ' ' != path[i])
+    char block[] = {
+        '/',
+        '\0',
+        ' ',
+        '.',
+    };
+    while (!is_char(path[i], block, ARR_SZ(block)))
         i += 1;
     return i;
 }
@@ -176,9 +189,24 @@ static struct DirEntry *find_node(struct Fat12 *image, struct DirEntry *base, ch
             continue;
         }
         path += slice;
-        if (path[0] == '\0')
-            return ptr;
-        else if (ptr->attr & DIR_SUBDIRECTORY) {
+        if (path[0] == '\0') {
+            if (ptr->ext[0] == ' ')
+                /* Target file has no extision. Match! */
+                return ptr;
+            else
+                /* Extension not match */
+                return NULL;
+        } else if (path[0] == '.') {
+            /* Check extension */
+            path += 1;
+            slice = dir_slice(path);
+            if (slice == dir_slice(ptr->ext) &&
+                strncmp(path, ptr->ext, slice) == 0)
+                return ptr;
+            else
+                return NULL;
+        } else if (ptr->attr & DIR_SUBDIRECTORY) {
+            /* Search subdirectory */
             size_t num = ptr->first_logical_cluster;
             struct DirEntry *subroot = logic_sector(image, num);
             return find_node(image, subroot, path + 1);
