@@ -139,7 +139,7 @@ uint16_t get_fat_value(struct Fat12 *image, size_t table, size_t sector) {
     if (table >= header->num_of_fat)
         return FAT_UNUSED;
 
-    size_t max = header->byte_per_sec * header->num_of_fat;
+    size_t max = header->byte_per_sec * header->sec_per_fat;
     if (sector >= max)
         return FAT_UNUSED;
 
