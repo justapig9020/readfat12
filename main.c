@@ -23,9 +23,19 @@ static void print_fat_table(struct Fat12 *image) {
     }
 }
 
+static void print_node_info(struct Fat12 *image) {
+    char path[101];
+    printf("Path: ");
+    scanf("%100s", path);
+    path[100] = '\0';
+    printf("Searching: %s\n", path);
+    print_inode(image, path);
+}
+
 static Operation_t ops[] = {
-    { print_header, "-H" , "Display header" },
-    { print_fat_table, "-t" , "list using fat table entries" },
+    { print_header, "-H", "Display header" },
+    { print_fat_table, "-t", "List using fat table entries" },
+    { print_node_info, "-n", "Display info of given path" },
 };
 
 static void print_help() {

@@ -63,4 +63,6 @@ void free_fat12(struct Fat12 *target);
 void print_header(struct Fat12 *image);
 
 uint16_t get_fat_value(struct Fat12 *image, size_t table, size_t sector);
+
+void print_inode(struct Fat12 *image, char *path);
 #endif
