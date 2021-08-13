@@ -143,7 +143,7 @@ uint16_t get_fat_value(struct Fat12 *image, size_t table, size_t sector) {
     if (sector >= max)
         return FAT_UNUSED;
 
-    struct FatTable *base = &image->table[max * table];
+    struct FatTable *base = (struct FatTable *)(((int8_t *)image->table) + (max * table));
     /* Due to fat12 use 12 bit to represent a fat entry, that is hard to form a single
      * entry into structure.
      * Therefore, FatTable form every two entries (3 bytes) into an object.

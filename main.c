@@ -17,11 +17,11 @@ static void _print_header(struct Fat12 *image, char *argv[]) {
 }
 
 static void print_fat_table(struct Fat12 *image, char *argv[]) {
-    const size_t bytes = 9 * 512;
+    const size_t entries = 9 * 512 / 3 * 2;
     if (!argv[0])
         return;
     int table = atoi(argv[0]);
-    for (int i=0; i<bytes; i++) {
+    for (int i=0; i<entries; i++) {
         uint16_t val = get_fat_value(image, table, i);
         if (val == FAT_UNUSED)
             continue;
