@@ -43,7 +43,7 @@ static Operation_t ops[] = {
 };
 
 static void print_help() {
-    printf("usage: readfat <Operation> <Image name>\n\n");
+    printf("usage: readfat <Command> <Image name> <Argument>\n\n");
     printf("Command\tArgument\n\n");
     for (int i=0; i<ARR_SZ(ops); i++) {
         printf("%s\t%s\t%s\n", ops[i].name, ops[i].arg, ops[i].help);
