@@ -36,10 +36,20 @@ static void print_node_info(struct Fat12 *image, char *argv[]) {
     print_inode(image, path);
 }
 
+static void print_all_content(struct Fat12 *image, char*argv[]) {
+    char *path = argv[0];
+    struct DirEntry *root= find_node(image, path);
+    if (root)
+        list_inodes(image, root);
+    else
+        printf("%s not found\n", path);
+}
+
 static Operation_t ops[] = {
     { _print_header, "-H", "None\t", "Display header"},
     { print_fat_table, "-t", "<table: uint>", "List using fat table entries"},
     { print_node_info, "-n", "<path: string>", "Display info of given path" },
+    { print_all_content, "-l", "<path: string>", "List all contents under the path"},
 };
 
 static void print_help() {

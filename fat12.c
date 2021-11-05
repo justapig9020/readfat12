@@ -180,15 +180,12 @@ uint16_t get_fat_value(struct Fat12 *image, size_t table, size_t cluster) {
 }
 
 static struct DirEntry *next_cluster(struct Fat12 *img, void *curr) {
-    struct Header *h = img->header;
-    int byte_per_clu = h->byte_per_sec * h->sec_per_clus;
+    int byte_per_clu = byte_per_cluster(img);
     intptr_t base = (intptr_t)img->logical_base;
     int offset = (intptr_t)curr - base;
     int clu_num = offset / byte_per_clu;
-    printf("Curr: 0x%X\n", clu_num);
     if (clu_num < FIST_DATA_CLUSTER) {
         int phy_num = clu_num + DATA_START_CLUSTER;
-        printf("Phy: %d\n", phy_num);
         if (phy_num > ROOT_DIR_END || phy_num < ROOT_DIR_START)
             return NULL;
         /* Root directory */
@@ -227,13 +224,26 @@ static int dir_slice(char *path) {
     return i;
 }
 
-static struct DirEntry *find_node(struct Fat12 *image, struct DirEntry *dir, char *path) {
+static int dir_per_cluster(struct Fat12 *image) {
+    struct Header *h = image->header;
+    uint16_t byte_per_clus = h->byte_per_sec * h->sec_per_clus;
+    return byte_per_clus / sizeof(struct DirEntry);
+}
+
+static void to_upper(char *str) {
+    char *ptr = str;
+    while ('\0' != *ptr) {
+        if (*ptr >= 'a' && *ptr <= 'z')
+            *ptr &= ~(1 << 5);
+        ptr += 1;
+    }
+}
+
+static struct DirEntry *_find_node(struct Fat12 *image, struct DirEntry *dir, char *path) {
     int i=0;
     struct DirEntry *curr = dir;
     int slice = dir_slice(path);
-    struct Header *h = image->header;
-    uint16_t byte_per_clus = h->byte_per_sec * h->sec_per_clus;
-    int dir_per_clus = byte_per_clus / sizeof(*dir);
+    int dir_per_clus = dir_per_cluster(image);
     while (1) {
         if (i >= dir_per_clus) {
             curr -= dir_per_clus; // back to base of cluster
@@ -269,10 +279,22 @@ static struct DirEntry *find_node(struct Fat12 *image, struct DirEntry *dir, cha
             /* Search subdirectory */
             size_t num = curr->first_logical_cluster;
             struct DirEntry *subroot = logic_cluster(image, num);
-            return find_node(image, subroot, path + 1);
+            return _find_node(image, subroot, path + 1);
         }
     }
     return NULL;
+}
+
+struct DirEntry *find_node(struct Fat12 *image, char *path) {
+    to_upper(path);
+    struct DirEntry *root = image->root;
+    while(match(path, "./")) {
+        path += 2;
+        if (strlen(path) == 0) {
+            return root;
+        }
+    }
+    return _find_node(image, root, path);
 }
 
 static bool is_end_char(char c) {
@@ -323,6 +345,8 @@ static void print_node_attr(uint8_t val) {
 }
 
 static void print_node(struct DirEntry *node) {
+    if (0 == node->attr)
+        return;
     printf("Name: ");
     print_file_name(node->filename, node->ext);
     puts("");
@@ -337,21 +361,55 @@ static void print_node(struct DirEntry *node) {
     printf("File size(in byte): %"PRIu32"\n", node->file_size);
 }
 
-static void to_upper(char *str) {
-    char *ptr = str;
-    while ('\0' != *ptr) {
-        if (*ptr >= 'a' && *ptr <= 'z')
-            *ptr &= ~(1 << 5);
-        ptr += 1;
-    }
-}
-
 void print_inode(struct Fat12 *image, char *path) {
-    to_upper(path);
-    struct DirEntry *root = image->root;
-    struct DirEntry *target = find_node(image, root, path);
+    struct DirEntry *target = find_node(image, path);
     if (!target)
         printf("%s not found\n", path);
     else
         print_node(target);
+}
+
+static void pad_tab(int n) {
+    for (int i=0; i<n; i++)
+        printf("|  ");
+}
+
+static void _list_inodes(struct Fat12 *image, struct DirEntry *dir, int level) {
+    int n = dir_per_cluster(image);
+    while (dir) {
+        for (int i=0; i<n; i++) {
+            struct DirEntry *curr= &dir[i];
+
+            if (curr->attr != 0) {
+                pad_tab(level);
+                printf("+- ");
+                print_file_name(curr->filename, curr->ext);
+                puts("");
+            }
+
+            if (curr->attr & DIR_SUBDIRECTORY &&
+                !match(curr->filename, ".") &&
+                !match(curr->filename, "..")) {
+                size_t num = curr->first_logical_cluster;
+                struct DirEntry *subroot = logic_cluster(image, num);
+                _list_inodes(image, subroot, level + 1);
+            }
+        }
+        dir = next_cluster(image, dir);
+    }
+}
+
+void list_inodes(struct Fat12 *image, struct DirEntry *dir) {
+    if (dir == image->root) {
+        /* Root directory */
+        _list_inodes(image, dir, 0);
+        return;
+    }
+    print_node(dir);
+    puts("");
+    if (dir->attr & DIR_SUBDIRECTORY) {
+        size_t num = dir->first_logical_cluster;
+        struct DirEntry *subroot = logic_cluster(image, num);
+        _list_inodes(image, subroot, 0);
+    }
 }
