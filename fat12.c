@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -15,7 +16,12 @@
 #include "fat_table.h"
 #include "dir_attr.h"
 
-#define TO_PHY(logic) (logic + 31)
+#define ROOT_DIR_START 19
+#define ROOT_DIR_END 32
+#define DATA_START_CLUSTER 31 // first two cluster is not use
+#define FIST_DATA_CLUSTER 2
+#define TO_PHY(logic) (logic + DATA_START_CLUSTER)
+
 char *fat_err = NULL;
 
 static struct FatTable *base_of_fat(uint8_t *base, struct Header *header) {
@@ -31,9 +37,29 @@ static struct DirEntry *base_of_rootdir(uint8_t *base, struct Header *header) {
 }
 
 static uint8_t *base_of_logical(uint8_t *base, struct Header *header) {
-    const size_t start_sector = 31;
-    size_t offset = 31 * header->byte_per_sec;
+    size_t offset = DATA_START_CLUSTER * header->byte_per_sec * header->sec_per_clus;
     return base + offset;
+}
+
+static uint32_t logical_to_byte_addr(uint16_t logical, uint32_t byte_per_clu) {
+    uint32_t phy_cluster = TO_PHY(logical);
+    return phy_cluster * byte_per_clu;
+}
+
+static uint32_t byte_per_cluster(struct Fat12 *image) {
+    struct Header *h = image->header;
+    return h->byte_per_sec * h->sec_per_clus;
+}
+
+static void *logic_cluster(struct Fat12 *image, size_t logic) {
+    struct Header *h = image->header;
+    size_t offset = logic * byte_per_cluster(image);
+    return image->logical_base + offset;
+}
+
+static void *physical_cluster(struct Fat12 *image, size_t phy) {
+    intptr_t base = (intptr_t)image->base;
+    return (void *)(base + phy * byte_per_cluster(image));
 }
 
 struct Fat12 *new_fat12(char *filename) {
@@ -55,7 +81,7 @@ struct Fat12 *new_fat12(char *filename) {
         goto close;
     }
 
-    fs->size = sb.st_size;   
+    fs->size = sb.st_size;
     uint8_t *base = mmap(NULL, fs->size, PROT_READ, MAP_PRIVATE, fd, 0);
     if (base == MAP_FAILED) {
         fat_err = "Memory mapping failed";
@@ -134,13 +160,13 @@ static uint16_t get_fat_entry_value(struct FatTable *entry, size_t num) {
     return ret;
 }
 
-uint16_t get_fat_value(struct Fat12 *image, size_t table, size_t sector) {
+uint16_t get_fat_value(struct Fat12 *image, size_t table, size_t cluster) {
     struct Header *header = image->header;
     if (table >= header->num_of_fat)
         return FAT_UNUSED;
 
     size_t max = header->byte_per_sec * header->sec_per_fat;
-    if (sector >= max)
+    if (cluster >= max)
         return FAT_UNUSED;
 
     struct FatTable *base = (struct FatTable *)(((int8_t *)image->table) + (max * table));
@@ -148,9 +174,37 @@ uint16_t get_fat_value(struct Fat12 *image, size_t table, size_t sector) {
      * entry into structure.
      * Therefore, FatTable form every two entries (3 bytes) into an object.
      */
-    size_t offset = sector / 2;
-    size_t num = sector % 2;
+    size_t offset = cluster / 2;
+    size_t num = cluster % 2;
     return get_fat_entry_value(base + offset, num);
+}
+
+static struct DirEntry *next_cluster(struct Fat12 *img, void *curr) {
+    struct Header *h = img->header;
+    int byte_per_clu = h->byte_per_sec * h->sec_per_clus;
+    intptr_t base = (intptr_t)img->logical_base;
+    int offset = (intptr_t)curr - base;
+    int clu_num = offset / byte_per_clu;
+    printf("Curr: 0x%X\n", clu_num);
+    if (clu_num < FIST_DATA_CLUSTER) {
+        int phy_num = clu_num + DATA_START_CLUSTER;
+        printf("Phy: %d\n", phy_num);
+        if (phy_num > ROOT_DIR_END || phy_num < ROOT_DIR_START)
+            return NULL;
+        /* Root directory */
+        phy_num += 1;
+        if (phy_num > ROOT_DIR_END)
+            return NULL;
+        return physical_cluster(img, phy_num);
+    }
+    uint16_t next = get_fat_value(img, 0, clu_num);
+    if (FAT_IS_LAST(next) ||
+        next == FAT_BAD ||
+        next == FAT_UNUSED) {
+        return NULL;
+    } else {
+        return logic_cluster(img, next);
+    }
 }
 
 static bool is_char(char a, char arr[], size_t size) {
@@ -173,26 +227,32 @@ static int dir_slice(char *path) {
     return i;
 }
 
-static void *logic_sector(struct Fat12 *image, size_t logic) {
-    size_t offset = logic * image->header->byte_per_sec;
-    return image->logical_base + offset;
-}
-
-static struct DirEntry *find_node(struct Fat12 *image, struct DirEntry *base, char *path) {
+static struct DirEntry *find_node(struct Fat12 *image, struct DirEntry *dir, char *path) {
     int i=0;
-    struct DirEntry *ptr = base;
+    struct DirEntry *curr = dir;
     int slice = dir_slice(path);
-    while (ptr->filename[0] != '\0') {
-        if (slice != dir_slice(ptr->filename) ||
-            strncmp(ptr->filename, path, slice) != 0) {
-            ptr += 1;
+    struct Header *h = image->header;
+    uint16_t byte_per_clus = h->byte_per_sec * h->sec_per_clus;
+    int dir_per_clus = byte_per_clus / sizeof(*dir);
+    while (1) {
+        if (i >= dir_per_clus) {
+            curr -= dir_per_clus; // back to base of cluster
+            curr = next_cluster(image, curr);
+            if (!curr)
+                return NULL;
+            i = 0;
+        }
+        if (slice != dir_slice(curr->filename) ||
+            strncmp(curr->filename, path, slice) != 0) {
+            i += 1;
+            curr += 1;
             continue;
         }
         path += slice;
         if (path[0] == '\0') {
-            if (ptr->ext[0] == ' ')
+            if (curr->ext[0] == ' ')
                 /* Target file has no extision. Match! */
-                return ptr;
+                return curr;
             else
                 /* Extension not match */
                 return NULL;
@@ -200,15 +260,15 @@ static struct DirEntry *find_node(struct Fat12 *image, struct DirEntry *base, ch
             /* Check extension */
             path += 1;
             slice = dir_slice(path);
-            if (slice == dir_slice(ptr->ext) &&
-                strncmp(path, ptr->ext, slice) == 0)
-                return ptr;
+            if (slice == dir_slice(curr->ext) &&
+                strncmp(path, curr->ext, slice) == 0)
+                return curr;
             else
                 return NULL;
-        } else if (ptr->attr & DIR_SUBDIRECTORY) {
+        } else if (curr->attr & DIR_SUBDIRECTORY) {
             /* Search subdirectory */
-            size_t num = ptr->first_logical_cluster;
-            struct DirEntry *subroot = logic_sector(image, num);
+            size_t num = curr->first_logical_cluster;
+            struct DirEntry *subroot = logic_cluster(image, num);
             return find_node(image, subroot, path + 1);
         }
     }
@@ -271,7 +331,9 @@ static void print_node(struct DirEntry *node) {
     print_node_attr(node->attr);
     puts("");
 
-    printf("First logical cluster: 0x%"PRIx16"\n", node->first_logical_cluster);
+    uint16_t flc = node->first_logical_cluster;
+    uint32_t byte_addr = logical_to_byte_addr(flc, 512);
+    printf("First logical cluster: 0x%"PRIx16" (BYTE: 0x%"PRIx32")\n", flc, byte_addr);
     printf("File size(in byte): %"PRIu32"\n", node->file_size);
 }
 
