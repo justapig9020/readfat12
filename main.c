@@ -36,13 +36,50 @@ static void print_node_info(struct Fat12 *image, char *argv[]) {
     print_inode(image, path);
 }
 
+static void pad_tab(int n) {
+    for (int i=0; i<n; i++)
+        printf("|  ");
+}
+
+static void filename_only(struct Fat12 *_, struct DirEntry *node, int level) {
+    pad_tab(level);
+    printf("+- ");
+    print_file_name(node->filename, node->ext);
+    puts("");
+}
+
+static void full_info(struct Fat12 *img, struct DirEntry *node, int _) {
+    print_node(node);
+    puts("");
+}
+
+static Display_t mode_select(int mode) {
+    Display_t ret;
+    switch (mode) {
+    case 0:
+        ret = filename_only;
+        break;
+    case 1:
+        ret = full_info;
+        break;
+    default:
+        ret = filename_only;
+    }
+    return ret;
+}
+
 static void print_all_content(struct Fat12 *image, char*argv[]) {
     char *path = argv[0];
     struct DirEntry *root= find_node(image, path);
-    if (root)
-        list_inodes(image, root);
-    else
+
+    if (!root) {
         printf("%s not found\n", path);
+        return;
+    }
+
+    int mode = atoi(argv[1]);
+    Display_t display = mode_select(mode);
+    list_inodes(image, root, display);
 }
 
 static Operation_t ops[] = {

@@ -69,6 +69,11 @@ void print_inode(struct Fat12 *image, char *path);
 
 struct DirEntry *find_node(struct Fat12 *image, char *path);
 
-void list_inodes(struct Fat12 *image, struct DirEntry *root);
+typedef void (*Display_t)(struct Fat12 *img, struct DirEntry *dir, int level);
+void list_inodes(struct Fat12 *image, struct DirEntry *root, Display_t display);
+
+void print_file_name(char name[], char ext[]);
+
+void print_node(struct DirEntry *node);
 
 #endif

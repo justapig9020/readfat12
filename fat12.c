@@ -318,7 +318,7 @@ static void print_string(char *base, int max) {
     }
 }
 
-static void print_file_name(char name[], char ext[]) {
+void print_file_name(char name[], char ext[]) {
     print_string(name, 8);
     if (!is_empty(ext, 3)) {
         printf(".");
@@ -344,7 +344,7 @@ static void print_node_attr(uint8_t val) {
     }
 }
 
-static void print_node(struct DirEntry *node) {
+void print_node(struct DirEntry *node) {
     if (0 == node->attr)
         return;
     printf("Name: ");
@@ -369,22 +369,14 @@ void print_inode(struct Fat12 *image, char *path) {
         print_node(target);
 }
 
-static void pad_tab(int n) {
-    for (int i=0; i<n; i++)
-        printf("|  ");
-}
-
-static void _list_inodes(struct Fat12 *image, struct DirEntry *dir, int level) {
+static void _list_inodes(struct Fat12 *image, struct DirEntry *dir, int level, Display_t display) {
     int n = dir_per_cluster(image);
     while (dir) {
         for (int i=0; i<n; i++) {
             struct DirEntry *curr= &dir[i];
 
             if (curr->attr != 0) {
-                pad_tab(level);
-                printf("+- ");
-                print_file_name(curr->filename, curr->ext);
-                puts("");
+                display(image, curr, level);
             }
 
             if (curr->attr & DIR_SUBDIRECTORY &&
@@ -392,17 +384,17 @@ static void _list_inodes(struct Fat12 *image, struct DirEntry *dir, int level) {
                 !match(curr->filename, "..")) {
                 size_t num = curr->first_logical_cluster;
                 struct DirEntry *subroot = logic_cluster(image, num);
-                _list_inodes(image, subroot, level + 1);
+                _list_inodes(image, subroot, level + 1, display);
             }
         }
         dir = next_cluster(image, dir);
     }
 }
 
-void list_inodes(struct Fat12 *image, struct DirEntry *dir) {
+void list_inodes(struct Fat12 *image, struct DirEntry *dir, Display_t display) {
     if (dir == image->root) {
         /* Root directory */
-        _list_inodes(image, dir, 0);
+        _list_inodes(image, dir, 0, display);
         return;
     }
     print_node(dir);
@@ -410,6 +402,6 @@ void list_inodes(struct Fat12 *image, struct DirEntry *dir) {
     if (dir->attr & DIR_SUBDIRECTORY) {
         size_t num = dir->first_logical_cluster;
         struct DirEntry *subroot = logic_cluster(image, num);
-        _list_inodes(image, subroot, 0);
+        _list_inodes(image, subroot, 0, display);
     }
 }
